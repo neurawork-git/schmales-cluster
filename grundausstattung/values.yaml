@@ -44,9 +44,12 @@ argo-cd:
     params:
       server.insecure: true          # TLS endet am Eingang, der Server spricht http
     cm:
-      # Argo CD erkennt Objekte am Label app.kubernetes.io/instance — das setzt
-      # Helm ohnehin, darum sieht Argo CD die von der Pipeline ausgerollten Objekte.
+      # Argo CD erkennt seine Objekte an einem Label. Vorgabe wäre
+      # argocd.argoproj.io/instance, das setzt die Pipeline nicht. Mit
+      # app.kubernetes.io/instance, das die Templates in dienste/ setzen, sieht
+      # Argo CD die von der Pipeline ausgerollten Objekte.
       application.resourceTrackingMethod: label
+      application.instanceLabelKey: app.kubernetes.io/instance
   # Die Adresse argo.<basis> legt dienste/values.yaml fest, nicht dieses Chart.
   server:
     ingress:

@@ -2,7 +2,7 @@
 # Ändern, committen, pushen: die Pipeline rollt aus, Argo CD zeigt den neuen Stand.
 
 eingang:
-  basis: ""          # leer: noch keine Adressen. Zum Testen <IP>.nip.io, für den Betrieb der eigene DNS-Name
+  basis: "20.79.145.133.nip.io"          # leer: noch keine Adressen. Zum Testen <IP>.nip.io, für den Betrieb der eigene DNS-Name
   tls: false         # true, sobald ein eigener DNS-Name auf die IP zeigt: Zertifikat von Let's Encrypt
   # Adressen: chat.<basis> (Open WebUI), mcp.<basis> (MCP-Dienst), argo.<basis> (Argo CD)
 
