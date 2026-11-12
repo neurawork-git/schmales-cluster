@@ -1,0 +1,18 @@
+dependencies:
+- name: traefik
+  repository: https://traefik.github.io/charts
+  version: 42.3.2
+- name: cert-manager
+  repository: https://charts.jetstack.io
+  version: v1.21.3
+- name: argo-cd
+  repository: https://argoproj.github.io/argo-helm
+  version: 10.18.0
+- name: keda
+  repository: https://kedacore.github.io/charts
+  version: 2.21.0
+- name: keda-add-ons-http
+  repository: https://kedacore.github.io/charts
+  version: 0.16.0
+digest: sha256:18d94bf6006db08fd387d8385ef03cb1d6a8ddb0a2e769b9b01fe9c3efff711b
+generated: "2026-11-12T15:12:40.2524339+01:00"

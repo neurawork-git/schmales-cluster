@@ -1,0 +1,24 @@
+# Die Values der Dienste — alles, was ein Mensch pflegt.
+# Ändern, committen, pushen: die Pipeline rollt aus, Argo CD zeigt den neuen Stand.
+
+eingang:
+  basis: ""          # leer: noch keine Adressen. Zum Testen <IP>.nip.io, für den Betrieb der eigene DNS-Name
+  tls: false         # true, sobald ein eigener DNS-Name auf die IP zeigt: Zertifikat von Let's Encrypt
+  # Adressen: chat.<basis> (Open WebUI), mcp.<basis> (MCP-Dienst), argo.<basis> (Argo CD)
+
+mcp:
+  # Platzhalter für deinen eigenen Dienst: Image und Port eintragen.
+  # Das Image baut das Repo deines Dienstes; hier steht nur der Name mit festem Tag.
+  image: traefik/whoami:v1.10
+  port: 80           # Port, auf dem der Container lauscht
+  aufNull: true      # ohne Anfragen null Kopien, die nächste Anfrage weckt den Dienst
+
+openwebui:
+  image: ghcr.io/open-webui/open-webui:v0.13.3
+  speicher: 5Gi
+
+postgres:
+  speicher: 8Gi
+
+argocd:
+  repo: https://github.com/neurawork-git/schmales-cluster   # das Repo, das Argo CD mit dem Cluster vergleicht

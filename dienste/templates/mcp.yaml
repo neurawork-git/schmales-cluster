@@ -1,0 +1,65 @@
+{{- $ctx := dict "root" . "teil" "mcp" }}
+{{- $m := .Values.mcp }}
+# Der eigene Dienst, zustandslos: kein Volume, beliebig viele Kopien.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  # Keine feste Zahl der Kopien: beim ersten Ausrollen eine, danach bestimmt sie
+  # bei aufNull der KEDA-HTTP-Zusatz (0 bis 1). Ein Wert hier würde ihn bei jedem
+  # Ausrollen überschreiben.
+  selector:
+    matchLabels: {{- include "dienste.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "dienste.labels" $ctx | nindent 8 }}
+    spec:
+      containers:
+        - name: mcp
+          image: {{ $m.image }}
+          ports:
+            - name: http
+              containerPort: {{ $m.port }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 1
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  selector: {{- include "dienste.selector" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- if and $m.aufNull .Values.eingang.basis }}
+---
+# Auf null: ohne Anfragen null Kopien, die nächste Anfrage an mcp.<basis> weckt den Dienst.
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  hosts:
+    - {{ printf "mcp.%s" .Values.eingang.basis }}
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "dienste.name" $ctx }}
+    service: {{ include "dienste.name" $ctx }}
+    port: 80
+  replicas:
+    min: 0
+    max: 1
+  scaledownPeriod: 60      # Sekunden ohne Anfrage, bis auf null gestellt wird
+{{- end }}

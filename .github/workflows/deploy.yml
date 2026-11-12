@@ -1,0 +1,95 @@
+# Rollt Grundausstattung und Dienste aus, bei jedem Push auf main.
+# Variablen des Repos (Settings → Secrets and variables → Actions → Variables),
+# alle fünf stehen in der Ausgabe von `tofu apply`:
+#   AZURE_CLIENT_ID · AZURE_TENANT_ID · AZURE_SUBSCRIPTION_ID · AKS_RESSOURCENGRUPPE · AKS_CLUSTER
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "grundausstattung/**"
+      - "dienste/**"
+  workflow_dispatch:
+
+# Nie zwei Läufe zugleich: der zweite wartet, bis der erste fertig ist.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # Anmeldung bei Azure per OIDC, ohne gespeichertes Passwort
+  contents: read
+
+jobs:
+  ausrollen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Bei Azure anmelden
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Zugang zum Cluster
+        uses: azure/aks-set-context@v5
+        with:
+          resource-group: ${{ vars.AKS_RESSOURCENGRUPPE }}
+          cluster-name: ${{ vars.AKS_CLUSTER }}
+
+      - name: Helm 4 einrichten
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.3.1
+
+      # Zufallswerte, einmal angelegt und danach nie wieder angefasst.
+      # Sie stehen weder im Repo noch im Protokoll des Laufs.
+      - name: Geheimnisse anlegen, falls sie fehlen
+        run: |
+          kubectl get namespace dienste >/dev/null 2>&1 || kubectl create namespace dienste
+          if ! kubectl -n dienste get secret dienste-geheim >/dev/null 2>&1; then
+            kubectl -n dienste create secret generic dienste-geheim \
+              --from-literal=postgres-password="$(openssl rand -hex 16)" \
+              --from-literal=webui-secret-key="$(openssl rand -hex 32)"
+          fi
+
+      - name: Fremde Charts holen
+        run: |
+          helm repo add traefik https://traefik.github.io/charts
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo add kedacore https://kedacore.github.io/charts
+          helm dependency build grundausstattung
+
+      - name: Grundausstattung ausrollen
+        run: |
+          helm upgrade --install grundausstattung ./grundausstattung \
+            --namespace grundausstattung --create-namespace \
+            --reset-values -f grundausstattung/values.yaml \
+            --wait --timeout 10m
+
+      - name: Dienste ausrollen
+        run: |
+          helm upgrade --install dienste ./dienste \
+            --namespace dienste --create-namespace \
+            --reset-values -f dienste/values.yaml \
+            --wait --timeout 10m
+
+      - name: Öffentliche IP des Eingangs
+        run: |
+          for i in $(seq 1 30); do
+            IP=$(kubectl -n grundausstattung get service grundausstattung-traefik \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            [ -n "$IP" ] && break
+            sleep 10
+          done
+          {
+            echo "## Öffentliche IP des Eingangs: \`${IP:-noch keine}\`"
+            echo
+            echo "Zum Testen in \`dienste/values.yaml\`: \`basis: \"${IP}.nip.io\"\`"
+            echo
+            echo "Für den Betrieb: beim DNS-Anbieter \`*.<basis>\` auf diese IP zeigen lassen, dann \`basis: \"<basis>\"\` und \`tls: true\`."
+          } >> "$GITHUB_STEP_SUMMARY"

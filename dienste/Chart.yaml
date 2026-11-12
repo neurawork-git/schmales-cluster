@@ -1,0 +1,7 @@
+apiVersion: v2
+name: dienste
+description: >-
+  Die eigenen Dienste: ein MCP-Dienst, Postgres und Open WebUI. Die Templates
+  bleiben gleich; was sich ändert, steht in values.yaml.
+type: application
+version: 0.1.0

@@ -1,0 +1,22 @@
+# Argo CD vergleicht dieses Chart im Repo mit dem, was im Cluster läuft, und zeigt
+# jede Abweichung. Es beobachtet nur: keine syncPolicy, ausgerollt wird von der Pipeline.
+# Der Name ist der Name des Helm-Release — so erkennt Argo CD die Objekte wieder.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ include "dienste.grundausstattung" . }}
+  labels: {{- include "dienste.labels" (dict "root" . "teil" "argocd") | nindent 4 }}
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.argocd.repo }}
+    targetRevision: main
+    path: dienste
+    helm:
+      releaseName: {{ .Release.Name }}
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Release.Namespace }}

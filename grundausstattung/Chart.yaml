@@ -1,0 +1,25 @@
+apiVersion: v2
+name: grundausstattung
+description: >-
+  Was jedes Cluster einmal braucht, aus fremden Charts: Eingang (Traefik),
+  Zertifikate (cert-manager), Oberfläche (Argo CD), Skalieren auf null
+  (KEDA mit HTTP-Zusatz). Eigene Templates gibt es hier nicht.
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: traefik
+    version: 42.3.2
+    repository: https://traefik.github.io/charts
+  - name: cert-manager
+    version: v1.21.3
+    repository: https://charts.jetstack.io
+  - name: argo-cd
+    version: 10.18.0
+    repository: https://argoproj.github.io/argo-helm
+  - name: keda
+    version: 2.21.0
+    repository: https://kedacore.github.io/charts
+  - name: keda-add-ons-http
+    version: 0.16.0
+    repository: https://kedacore.github.io/charts

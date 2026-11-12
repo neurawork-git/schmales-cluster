@@ -1,0 +1,67 @@
+{{- $ctx := dict "root" . "teil" "postgres" }}
+# Postgres: eine Kopie, eigene Platte. Das Passwort kommt aus dem Geheimnis der Pipeline.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "dienste.name" $ctx }}
+  replicas: 1
+  selector:
+    matchLabels: {{- include "dienste.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "dienste.labels" $ctx | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: openwebui
+            - name: POSTGRES_USER
+              value: openwebui
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dienste.geheim" . }}
+                  key: postgres-password
+            # Unterordner, weil eine frische Platte ein lost+found mitbringt.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openwebui", "-d", "openwebui"]
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - name: daten
+              mountPath: /var/lib/postgresql/data
+  # Die Platte entsteht einmal beim ersten Start und bleibt: Helm verwaltet sie nicht
+  # und löscht sie darum auch nie, selbst wenn ein Ausrollen fehlschlägt.
+  volumeClaimTemplates:
+    - metadata:
+        name: daten
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgres.speicher }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  selector: {{- include "dienste.selector" $ctx | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

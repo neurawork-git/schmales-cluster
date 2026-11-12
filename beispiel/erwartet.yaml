@@ -1,0 +1,398 @@
+---
+# Source: dienste/templates/openwebui.yaml
+# Platte für /app/backend/data (Uploads, Vektorindex). Sie hängt immer nur an einem
+# Rechner (ReadWriteOnce), darum läuft Open WebUI in genau einer Kopie.
+# keep: Helm löscht die Platte nie, auch nicht nach einem Fehlversuch.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dienste-openwebui-daten
+  labels:
+    app.kubernetes.io/name: openwebui
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# Source: dienste/templates/mcp.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: dienste-mcp
+  labels:
+    app.kubernetes.io/name: mcp
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  selector:
+    app.kubernetes.io/name: mcp
+    app.kubernetes.io/instance: dienste
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+# Source: dienste/templates/openwebui.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: dienste-openwebui
+  labels:
+    app.kubernetes.io/name: openwebui
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  selector:
+    app.kubernetes.io/name: openwebui
+    app.kubernetes.io/instance: dienste
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+# Source: dienste/templates/postgres.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: dienste-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: dienste
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+
+---
+# Source: dienste/templates/mcp.yaml
+# Der eigene Dienst, zustandslos: kein Volume, beliebig viele Kopien.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dienste-mcp
+  labels:
+    app.kubernetes.io/name: mcp
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  # Keine feste Zahl der Kopien: beim ersten Ausrollen eine, danach bestimmt sie
+  # bei aufNull der KEDA-HTTP-Zusatz (0 bis 1). Ein Wert hier würde ihn bei jedem
+  # Ausrollen überschreiben.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp
+      app.kubernetes.io/instance: dienste
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp
+        app.kubernetes.io/instance: dienste
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: dienste-0.1.0
+    spec:
+      containers:
+        - name: mcp
+          image: traefik/whoami:v1.10
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 1
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+
+---
+# Source: dienste/templates/openwebui.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dienste-openwebui
+  labels:
+    app.kubernetes.io/name: openwebui
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  replicas: 1
+  # Recreate: erst die alte Kopie weg, dann die neue — die Platte kann nicht an zwei
+  # Kopien zugleich hängen. rollingUpdate muss dabei ausdrücklich leer sein.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openwebui
+      app.kubernetes.io/instance: dienste
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openwebui
+        app.kubernetes.io/instance: dienste
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: dienste-0.1.0
+    spec:
+      containers:
+        - name: openwebui
+          image: ghcr.io/open-webui/open-webui:v0.13.3
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Das Passwort steht nur im Geheimnis; Kubernetes setzt $(POSTGRES_PASSWORD) beim Start ein.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dienste-geheim
+                  key: postgres-password
+            - name: WEBUI_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dienste-geheim
+                  key: webui-secret-key
+            - name: DATABASE_URL
+              value: "postgresql://openwebui:$(POSTGRES_PASSWORD)@dienste-postgres:5432/openwebui"
+            - name: ENABLE_OLLAMA_API
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { cpu: "1", memory: 2Gi }
+          volumeMounts:
+            - name: daten
+              mountPath: /app/backend/data
+      volumes:
+        - name: daten
+          persistentVolumeClaim:
+            claimName: dienste-openwebui-daten
+
+---
+# Source: dienste/templates/postgres.yaml
+# Postgres: eine Kopie, eigene Platte. Das Passwort kommt aus dem Geheimnis der Pipeline.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dienste-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  serviceName: dienste-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: dienste
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/instance: dienste
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: dienste-0.1.0
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: openwebui
+            - name: POSTGRES_USER
+              value: openwebui
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dienste-geheim
+                  key: postgres-password
+            # Unterordner, weil eine frische Platte ein lost+found mitbringt.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openwebui", "-d", "openwebui"]
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - name: daten
+              mountPath: /var/lib/postgresql/data
+  # Die Platte entsteht einmal beim ersten Start und bleibt: Helm verwaltet sie nicht
+  # und löscht sie darum auch nie, selbst wenn ein Ausrollen fehlschlägt.
+  volumeClaimTemplates:
+    - metadata:
+        name: daten
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 8Gi
+
+---
+# Source: dienste/templates/eingang.yaml
+# Open WebUI: chat.<basis>
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dienste-openwebui
+  namespace: dienste
+  labels:
+    app.kubernetes.io/name: openwebui
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: chat.203.0.113.10.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dienste-openwebui
+                port:
+                  number: 80
+
+---
+# Source: dienste/templates/eingang.yaml
+# MCP-Dienst: mcp.<basis>
+# Auf null: Die Anfrage geht an den Abfang-Dienst des KEDA-HTTP-Zusatzes. Er weckt
+# den Dienst, hält die Anfrage, bis eine Kopie bereit ist, und reicht sie weiter.
+# Der Ingress liegt darum im Namespace der Grundausstattung, neben dem Abfang-Dienst.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dienste-mcp
+  namespace: grundausstattung
+  labels:
+    app.kubernetes.io/name: mcp
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: mcp.203.0.113.10.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keda-add-ons-http-interceptor-proxy
+                port:
+                  number: 8080
+
+---
+# Source: dienste/templates/eingang.yaml
+# Argo CD: argo.<basis>
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dienste-argo
+  namespace: grundausstattung
+  labels:
+    app.kubernetes.io/name: argo
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: argo.203.0.113.10.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grundausstattung-argocd-server
+                port:
+                  number: 80
+
+---
+# Source: dienste/templates/argocd.yaml
+# Argo CD vergleicht dieses Chart im Repo mit dem, was im Cluster läuft, und zeigt
+# jede Abweichung. Es beobachtet nur: keine syncPolicy, ausgerollt wird von der Pipeline.
+# Der Name ist der Name des Helm-Release — so erkennt Argo CD die Objekte wieder.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dienste
+  namespace: grundausstattung
+  labels:
+    app.kubernetes.io/name: argocd
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/beispiel-org/schmales-cluster
+    targetRevision: main
+    path: dienste
+    helm:
+      releaseName: dienste
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dienste
+
+---
+# Source: dienste/templates/mcp.yaml
+# Auf null: ohne Anfragen null Kopien, die nächste Anfrage an mcp.<basis> weckt den Dienst.
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: dienste-mcp
+  labels:
+    app.kubernetes.io/name: mcp
+    app.kubernetes.io/instance: dienste
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: dienste-0.1.0
+spec:
+  hosts:
+    - mcp.203.0.113.10.nip.io
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dienste-mcp
+    service: dienste-mcp
+    port: 80
+  replicas:
+    min: 0
+    max: 1
+  scaledownPeriod: 60      # Sekunden ohne Anfrage, bis auf null gestellt wird

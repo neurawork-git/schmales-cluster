@@ -1,0 +1,91 @@
+{{- $ctx := dict "root" . "teil" "openwebui" }}
+{{- $o := .Values.openwebui }}
+{{- $pvc := printf "%s-daten" (include "dienste.name" $ctx) }}
+# Platte für /app/backend/data (Uploads, Vektorindex). Sie hängt immer nur an einem
+# Rechner (ReadWriteOnce), darum läuft Open WebUI in genau einer Kopie.
+# keep: Helm löscht die Platte nie, auch nicht nach einem Fehlversuch.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $pvc }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ $o.speicher }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate: erst die alte Kopie weg, dann die neue — die Platte kann nicht an zwei
+  # Kopien zugleich hängen. rollingUpdate muss dabei ausdrücklich leer sein.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  selector:
+    matchLabels: {{- include "dienste.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "dienste.labels" $ctx | nindent 8 }}
+    spec:
+      containers:
+        - name: openwebui
+          image: {{ $o.image }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Das Passwort steht nur im Geheimnis; Kubernetes setzt $(POSTGRES_PASSWORD) beim Start ein.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dienste.geheim" . }}
+                  key: postgres-password
+            - name: WEBUI_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dienste.geheim" . }}
+                  key: webui-secret-key
+            - name: DATABASE_URL
+              value: {{ printf "postgresql://openwebui:$(POSTGRES_PASSWORD)@%s:5432/openwebui" (include "dienste.name" (dict "root" . "teil" "postgres")) | quote }}
+            - name: ENABLE_OLLAMA_API
+              value: "false"
+            {{- if and .Values.eingang.tls .Values.eingang.basis }}
+            - name: WEBUI_URL
+              value: {{ printf "https://chat.%s" .Values.eingang.basis | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { cpu: "1", memory: 2Gi }
+          volumeMounts:
+            - name: daten
+              mountPath: /app/backend/data
+      volumes:
+        - name: daten
+          persistentVolumeClaim:
+            claimName: {{ $pvc }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dienste.name" $ctx }}
+  labels: {{- include "dienste.labels" $ctx | nindent 4 }}
+spec:
+  selector: {{- include "dienste.selector" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

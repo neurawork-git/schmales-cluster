@@ -1,0 +1,19 @@
+{{- if .Values.eingang.tls }}
+# Aussteller für Zertifikate von Let's Encrypt. Let's Encrypt prüft per HTTP über
+# Traefik, dass die Adresse auf dieses Cluster zeigt; ohne E-Mail-Adresse,
+# cert-manager verlängert selbst.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+  labels: {{- include "dienste.labels" (dict "root" . "teil" "aussteller") | nindent 4 }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-konto
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+{{- end }}

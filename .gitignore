@@ -1,0 +1,9 @@
+# Heruntergeladene Charts: holt `helm dependency build` aus Chart.lock
+grundausstattung/charts/
+
+# OpenTofu: Arbeitsordner, Zustand und lokale Werte bleiben auf deinem Rechner
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+cluster/apply.log

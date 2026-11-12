@@ -1,0 +1,34 @@
+{{- /*
+Die Adressen. Ohne eingang.basis gibt es keine — die Dienste laufen, sind aber
+von außen nicht erreichbar.
+
+Weg einer Anfrage: öffentliche IP → Traefik → Ingress (Adresse) → Service (Port 80)
+→ Pod (Port des Containers).
+*/ -}}
+{{- with .Values.eingang }}
+{{- if and .tls (hasSuffix "nip.io" .basis) }}
+{{- fail "eingang.tls: true braucht einen eigenen DNS-Namen. Mit <IP>.nip.io bleibt tls: false." }}
+{{- end }}
+{{- end }}
+{{- if .Values.eingang.basis }}
+{{- $ga := include "dienste.grundausstattung" . }}
+# Open WebUI: chat.<basis>
+{{ include "dienste.ingress" (dict "root" . "teil" "openwebui" "namespace" .Release.Namespace
+     "vorsatz" "chat" "service" (include "dienste.name" (dict "root" . "teil" "openwebui")) "port" 80) }}
+---
+# MCP-Dienst: mcp.<basis>
+{{- if .Values.mcp.aufNull }}
+# Auf null: Die Anfrage geht an den Abfang-Dienst des KEDA-HTTP-Zusatzes. Er weckt
+# den Dienst, hält die Anfrage, bis eine Kopie bereit ist, und reicht sie weiter.
+# Der Ingress liegt darum im Namespace der Grundausstattung, neben dem Abfang-Dienst.
+{{ include "dienste.ingress" (dict "root" . "teil" "mcp" "namespace" $ga
+     "vorsatz" "mcp" "service" "keda-add-ons-http-interceptor-proxy" "port" 8080) }}
+{{- else }}
+{{ include "dienste.ingress" (dict "root" . "teil" "mcp" "namespace" .Release.Namespace
+     "vorsatz" "mcp" "service" (include "dienste.name" (dict "root" . "teil" "mcp")) "port" 80) }}
+{{- end }}
+---
+# Argo CD: argo.<basis>
+{{ include "dienste.ingress" (dict "root" . "teil" "argo" "namespace" $ga
+     "vorsatz" "argo" "service" (printf "%s-argocd-server" $ga) "port" 80) }}
+{{- end }}

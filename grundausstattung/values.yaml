@@ -1,0 +1,66 @@
+# Grundausstattung des Clusters: nur Werte für fremde Charts.
+# Was du für deine Dienste pflegst, steht in dienste/values.yaml, nicht hier.
+
+# --- Eingang: Traefik ------------------------------------------------------
+# Ein Service vom Typ LoadBalancer, also genau eine öffentliche IP für alle Adressen.
+traefik:
+  deployment:
+    replicas: 1
+  ingressClass:
+    enabled: true
+    isDefaultClass: true
+    name: traefik          # auf diesen Namen verweisen alle Ingress-Objekte
+  service:
+    spec:
+      type: LoadBalancer
+
+# --- Zertifikate: cert-manager ---------------------------------------------
+# Holt Zertifikate bei Let's Encrypt, sobald dienste/values.yaml tls: true setzt.
+cert-manager:
+  crds:
+    enabled: true          # Ressourcentypen wie Certificate gleich mitinstallieren
+    keep: true             # beim Deinstallieren nicht mitlöschen
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+  webhook:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 64Mi }
+  cainjector:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 128Mi }
+  startupapicheck:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 64Mi }
+
+# --- Oberfläche: Argo CD ---------------------------------------------------
+# Argo CD vergleicht das Repo mit dem Cluster und zeigt jede Abweichung.
+# Ausgerollt wird von der Pipeline, Argo CD beobachtet nur.
+argo-cd:
+  configs:
+    params:
+      server.insecure: true          # TLS endet am Eingang, der Server spricht http
+    cm:
+      # Argo CD erkennt Objekte am Label app.kubernetes.io/instance — das setzt
+      # Helm ohnehin, darum sieht Argo CD die von der Pipeline ausgerollten Objekte.
+      application.resourceTrackingMethod: label
+  # Die Adresse argo.<basis> legt dienste/values.yaml fest, nicht dieses Chart.
+  server:
+    ingress:
+      enabled: false
+
+# --- Skalieren auf null: KEDA mit HTTP-Zusatz ------------------------------
+keda: {}
+
+keda-add-ons-http:
+  scaler:
+    replicas: 1
+  interceptor:
+    replicas:
+      min: 1
+      max: 3
+    # So lange hält der Abfang-Dienst die erste Anfrage, bis der Dienst wach ist.
+    readinessTimeout: 120s
