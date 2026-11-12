@@ -66,16 +66,20 @@ jobs:
 
       - name: Grundausstattung ausrollen
         run: |
+          # --force-conflicts: Was im Repo steht, gilt, auch gegen Änderungen von Hand und gegen Felder, die die Cloud ergänzt.
           helm upgrade --install grundausstattung ./grundausstattung \
             --namespace grundausstattung --create-namespace \
             --reset-values -f grundausstattung/values.yaml \
+            --force-conflicts \
             --wait --timeout 10m
 
       - name: Dienste ausrollen
         run: |
+          # --force-conflicts: Was im Repo steht, gilt, auch gegen Änderungen von Hand und gegen Felder, die die Cloud ergänzt.
           helm upgrade --install dienste ./dienste \
             --namespace dienste --create-namespace \
             --reset-values -f dienste/values.yaml \
+            --force-conflicts \
             --wait --timeout 10m
 
       - name: Öffentliche IP des Eingangs

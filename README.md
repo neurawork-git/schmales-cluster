@@ -72,7 +72,7 @@ Daraus entstehen drei Adressen: `chat.<basis>` (Open WebUI), `mcp.<basis>` (MCP-
    git remote add origin https://github.com/<organisation>/<repo>.git
    git push -u origin main
    ```
-   Der Push startet die Pipeline. Sie rollt Grundausstattung und Dienste aus, der erste Lauf braucht einige Minuten. In der Zusammenfassung des Laufs (*Actions → deploy → Summary*) steht die öffentliche IP des Eingangs. Einen Lauf von Hand startest du unter *Actions → deploy → Run workflow*.
+   Der Push startet die Pipeline. Sie rollt Grundausstattung und Dienste aus, der erste Lauf braucht einige Minuten. Jeder Lauf setzt durch, was im Repo steht, auch gegen Änderungen von Hand am Cluster und gegen Felder, die Azure selbst ergänzt. In der Zusammenfassung des Laufs (*Actions → deploy → Summary*) steht die öffentliche IP des Eingangs. Einen Lauf von Hand startest du unter *Actions → deploy → Run workflow*.
 3. **Adressen eintragen.** In `dienste/values.yaml` bei `eingang.basis` die IP mit `.nip.io` eintragen, etwa `basis: "203.0.113.10.nip.io"`, committen, pushen. Nach dem Lauf öffnet `http://chat.203.0.113.10.nip.io` Open WebUI. **Leg sofort das erste Konto an:** Das erste Konto wird Administrator, und die Adresse ist für jeden im Internet erreichbar.
 
 **Abends abbauen:** `tofu destroy` in `cluster/` löscht die Ressourcengruppe mit allem darin, auch die Platten mit den Daten.
