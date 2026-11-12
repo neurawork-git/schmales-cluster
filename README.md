@@ -40,31 +40,53 @@ Daraus entstehen drei Adressen: `chat.<basis>` (Open WebUI), `mcp.<basis>` (MCP-
 
 - **Ein Azure-Abo**, in dem du Rollen vergeben darfst (Rolle „Besitzer“, oder „Mitwirkender“ zusammen mit „Benutzerzugriffsadministrator“). OpenTofu gibt der Pipeline das Recht, dieses eine Cluster anzusprechen.
 - **Ein GitHub-Konto**, unter dem du ein Repo anlegen darfst.
-- **Fünf Werkzeuge** in PowerShell:
-  ```powershell
-  winget install Microsoft.AzureCLI    # az
-  winget install OpenTofu.Tofu         # tofu
-  winget install Helm.Helm             # helm, Version 4
-  winget install Kubernetes.kubectl    # kubectl
-  winget install GitHub.cli            # gh
+- **WSL mit Ubuntu**, eingerichtet wie in Teil 1 der Reihe. Alle Befehle hier laufen in einem Terminal in WSL; Git und curl bringt Ubuntu mit.
+- **Fünf Werkzeuge**, installiert nach den Anleitungen der Hersteller (`sudo` fragt nach deinem Passwort):
+  ```bash
+  # az (Azure CLI), learn.microsoft.com/cli/azure/install-azure-cli-linux
+  curl -fsSL 'https://azurecliprod.blob.core.windows.net/$root/deb_install.sh' | sudo bash
+
+  # tofu (OpenTofu), opentofu.org/docs/intro/install/deb/
+  curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+  chmod +x install-opentofu.sh
+  ./install-opentofu.sh --install-method deb
+  rm -f install-opentofu.sh
+
+  # helm, Version 4
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
+
+  # kubectl
+  curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  sudo install -m 0755 kubectl /usr/local/bin/kubectl
+
+  # gh (GitHub CLI), github.com/cli/cli/blob/trunk/docs/install_linux.md
+  (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+  	&& sudo mkdir -p -m 755 /etc/apt/keyrings \
+  	&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  	&& cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+  	&& sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  	&& sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+  	&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+  	&& sudo apt update \
+  	&& sudo apt install gh -y
   ```
-  Danach ein neues Terminal öffnen und einmal `az login` und `gh auth login`.
+  Danach einmal `az login` und `gh auth login`.
 
 ## Installation
 
 1. **Eigenes Repo und Cluster anlegen.** Auf GitHub ein neues, leeres Repo anlegen (*New repository*, ohne README); das wird dein Repo, in das du pushst. Dann den Präfix holen, mit dem GitHub die Läufe dieses Repos ausweist:
-   ```powershell
+   ```bash
    gh api repos/<organisation>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
    ```
    Im Ordner dieser Vorlage:
-   ```powershell
+   ```bash
    cd cluster
    tofu init
    tofu apply
    ```
    `tofu apply` fragt nach `github_oidc_sub_praefix`, dort die Ausgabe des `gh`-Befehls einfügen, und nach deinem Abo (`az account show --query id -o tsv`). Nach `yes` legt es fünf Ressourcen an, das dauert rund fünf Minuten. Am Ende steht `github_variablen` mit fünf Werten. Trag sie in deinem Repo unter *Settings → Secrets and variables → Actions → Variables* ein, je *New repository variable*, Name genau wie in der Ausgabe (etwa `AZURE_CLIENT_ID`), Wert ohne Anführungszeichen.
 2. **Vorlage ins Repo pushen.** In `dienste/values.yaml` bei `argocd.repo` die Adresse deines Repos eintragen. Dann im Ordner dieser Vorlage:
-   ```powershell
+   ```bash
    cd ..
    git init -b main
    git add .
@@ -172,7 +194,7 @@ Das Image baut das Repo deines Dienstes, etwa mit einer GitHub Action, die es in
 
 Adresse `http://argo.<basis>`, Benutzer `admin`. Das Startpasswort liest du so aus, erst den Zugang einrichten (der Befehl steht auch in der Ausgabe von `tofu apply` unter `kubectl_kontext`):
 
-```powershell
+```bash
 az aks get-credentials --resource-group rg-schmales-cluster --name aks-schmales-cluster --context schmales-cluster
 kubectl --context schmales-cluster -n grundausstattung get secret argocd-initial-admin-secret -o go-template='{{.data.password | base64decode}}'
 ```
@@ -181,34 +203,31 @@ Argo CD zeigt die Anwendung `dienste`: grün, wenn das Cluster dem Repo entspric
 
 ## Lokal rendern ohne Azure
 
-Was die Pipeline ausrollen würde, siehst du ohne Azure und ohne Anmeldung. Dafür reichen Git, Helm und kubectl, alle Befehle in PowerShell.
+Was die Pipeline ausrollen würde, siehst du ohne Azure, ohne Anmeldung und ohne Cluster. Dafür reichen Git und Helm, im Terminal in WSL.
 
 **1. Vorlage holen.**
 
-```powershell
+```bash
 git clone https://github.com/neurawork-git/schmales-cluster.git
 cd schmales-cluster
 ```
 
-Ohne Git: auf der Seite des Repos *Code → Download ZIP*, dann `Expand-Archive schmales-cluster-main.zip .` und `cd schmales-cluster-main`.
+**2. Rendern und darin suchen.**
 
-**2. Kubernetes in Docker Desktop einschalten.** In Docker Desktop *Einstellungen → Kubernetes → Enable Kubernetes*, dann *Apply*. Nach ein paar Minuten zeigt die Statusleiste „Kubernetes running“. Prüfen:
-
-```powershell
-kubectl --context docker-desktop get nodes
-```
-
-Fertig, wenn ein Rechner `docker-desktop` mit Status `Ready` erscheint. Das ist ein Cluster mit einem Rechner auf deinem Laptop.
-
-**3. Rendern und darin suchen.**
-
-```powershell
+```bash
 helm template dienste ./dienste -f dienste/values.yaml > gerendert.yaml
-Select-String -Path gerendert.yaml -Pattern "^kind:"
-Select-String -Path gerendert.yaml -Pattern "containerPort|targetPort|port:"
+grep "^kind:" gerendert.yaml
+grep -E "containerPort|targetPort|port:" gerendert.yaml
 ```
 
-Die erste Suche listet alle Objekte, die zweite die Kette der Ports. Ändere einen Wert, etwa `basis: "203.0.113.10.nip.io"` in `dienste/values.yaml`, rendere erneut und such nach `host:`: Jetzt stehen die drei Adressen darin. Die Templates bleiben gleich, nur die Werte wandern an ihre Stellen.
+Die erste Suche listet alle Objekte, die zweite die Kette der Ports. Solange `basis` leer ist, findet `grep "host:" gerendert.yaml` nichts. Trag in `dienste/values.yaml` `basis: "203.0.113.10.nip.io"` ein und rendere erneut:
+
+```bash
+helm template dienste ./dienste -f dienste/values.yaml > gerendert.yaml
+grep "host:" gerendert.yaml
+```
+
+Jetzt stehen die drei Adressen darin: `chat.`, `mcp.` und `argo.203.0.113.10.nip.io`. Die Templates bleiben gleich, nur die Werte wandern an ihre Stellen.
 
 ## Was es kostet
 
