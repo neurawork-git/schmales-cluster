@@ -3,8 +3,8 @@ variable "subscription_id" {
   type        = string
 }
 
-variable "github_repo" {
-  description = "Dein GitHub-Repo, dessen Pipeline ausrollen darf, als <organisation>/<repo>."
+variable "github_oidc_sub_praefix" {
+  description = "Präfix, mit dem GitHub die Läufe deines Repos ausweist; Wert aus: gh api repos/<organisation>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix"
   type        = string
 }
 

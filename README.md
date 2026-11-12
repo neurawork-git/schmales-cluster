@@ -39,26 +39,40 @@ Daraus entstehen drei Adressen: `chat.<basis>` (Open WebUI), `mcp.<basis>` (MCP-
 ## Was du brauchst
 
 - **Ein Azure-Abo**, in dem du Rollen vergeben darfst (Rolle „Besitzer“, oder „Mitwirkender“ zusammen mit „Benutzerzugriffsadministrator“). OpenTofu gibt der Pipeline das Recht, dieses eine Cluster anzusprechen.
-- **Ein eigenes GitHub-Repo** mit dem Inhalt dieses Ordners, Branch `main`.
-- **Vier Werkzeuge** in PowerShell:
+- **Ein GitHub-Konto**, unter dem du ein Repo anlegen darfst.
+- **Fünf Werkzeuge** in PowerShell:
   ```powershell
   winget install Microsoft.AzureCLI    # az
   winget install OpenTofu.Tofu         # tofu
   winget install Helm.Helm             # helm, Version 4
   winget install Kubernetes.kubectl    # kubectl
+  winget install GitHub.cli            # gh
   ```
-  Danach ein neues Terminal öffnen und einmal `az login`.
+  Danach ein neues Terminal öffnen und einmal `az login` und `gh auth login`.
 
 ## Installation
 
-1. **Cluster anlegen.** Im Repo:
+1. **Eigenes Repo und Cluster anlegen.** Auf GitHub ein neues, leeres Repo anlegen (*New repository*, ohne README); das wird dein Repo, in das du pushst. Dann den Präfix holen, mit dem GitHub die Läufe dieses Repos ausweist:
+   ```powershell
+   gh api repos/<organisation>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+   ```
+   Im Ordner dieser Vorlage:
    ```powershell
    cd cluster
    tofu init
    tofu apply
    ```
-   `tofu apply` fragt nach deinem Abo (`az account show --query id -o tsv`) und deinem Repo als `<organisation>/<repo>`, zeigt den Plan und legt nach `yes` fünf Ressourcen an. Das dauert rund fünf Minuten. Am Ende steht `github_variablen`: die drei IDs für die Anmeldung und die Namen von Ressourcengruppe und Cluster.
-2. **Pipeline anschließen.** Die fünf Werte aus `github_variablen` im GitHub-Repo eintragen unter *Settings → Secrets and variables → Actions → Variables*, jeweils Name und Wert. In `dienste/values.yaml` bei `argocd.repo` die Adresse deines Repos eintragen. Committen, pushen. Die Pipeline rollt Grundausstattung und Dienste aus, der erste Lauf braucht einige Minuten. In der Zusammenfassung des Laufs (*Actions → deploy → Summary*) steht die öffentliche IP des Eingangs. Hast du schon vor dem Eintragen der Variablen gepusht, startest du den Lauf von Hand: *Actions → deploy → Run workflow*.
+   `tofu apply` fragt nach `github_oidc_sub_praefix`, dort die Ausgabe des `gh`-Befehls einfügen, und nach deinem Abo (`az account show --query id -o tsv`). Nach `yes` legt es fünf Ressourcen an, das dauert rund fünf Minuten. Am Ende steht `github_variablen` mit fünf Werten. Trag sie in deinem Repo unter *Settings → Secrets and variables → Actions → Variables* ein, je *New repository variable*, Name genau wie in der Ausgabe (etwa `AZURE_CLIENT_ID`), Wert ohne Anführungszeichen.
+2. **Vorlage ins Repo pushen.** In `dienste/values.yaml` bei `argocd.repo` die Adresse deines Repos eintragen. Dann im Ordner dieser Vorlage:
+   ```powershell
+   cd ..
+   git init -b main
+   git add .
+   git commit -m "Schmales Cluster"
+   git remote add origin https://github.com/<organisation>/<repo>.git
+   git push -u origin main
+   ```
+   Der Push startet die Pipeline. Sie rollt Grundausstattung und Dienste aus, der erste Lauf braucht einige Minuten. In der Zusammenfassung des Laufs (*Actions → deploy → Summary*) steht die öffentliche IP des Eingangs. Einen Lauf von Hand startest du unter *Actions → deploy → Run workflow*.
 3. **Adressen eintragen.** In `dienste/values.yaml` bei `eingang.basis` die IP mit `.nip.io` eintragen, etwa `basis: "203.0.113.10.nip.io"`, committen, pushen. Nach dem Lauf öffnet `http://chat.203.0.113.10.nip.io` Open WebUI. **Leg sofort das erste Konto an:** Das erste Konto wird Administrator, und die Adresse ist für jeden im Internet erreichbar.
 
 **Abends abbauen:** `tofu destroy` in `cluster/` löscht die Ressourcengruppe mit allem darin, auch die Platten mit den Daten.
@@ -150,7 +164,9 @@ mcp:
   aufNull: true
 ```
 
-Das Image baut das Repo deines Dienstes, etwa mit einer GitHub Action, die es in die GitHub Container Registry legt. Hier steht nur sein Name mit einem festen Tag: Ein neuer Stand ist ein neuer Tag in dieser Zeile, committet und gepusht. Mit `aufNull: false` läuft der Dienst dauerhaft in einer Kopie, ohne Wartezeit bei der ersten Anfrage.
+Das Image baut das Repo deines Dienstes, etwa mit einer GitHub Action, die es in die GitHub Container Registry legt. Hier steht nur sein Name mit einem festen Tag: Ein neuer Stand ist ein neuer Tag in dieser Zeile, committet und gepusht.
+
+**Einfacher Einstieg:** `aufNull: false` — der Dienst läuft dauerhaft in einer Kopie, ohne Abfang-Dienst und ohne Wartezeit bei der ersten Anfrage; auf null stellst du um, wenn er läuft.
 
 ## Argo CD öffnen
 
@@ -161,7 +177,7 @@ az aks get-credentials --resource-group rg-schmales-cluster --name aks-schmales-
 kubectl --context schmales-cluster -n grundausstattung get secret argocd-initial-admin-secret -o go-template='{{.data.password | base64decode}}'
 ```
 
-Argo CD zeigt die Anwendung `dienste`: grün, wenn das Cluster dem Repo entspricht, gelb „OutOfSync“, sobald jemand etwas direkt im Cluster ändert. Argo CD gleicht selbst nichts ab; ausgerollt wird nur über die Pipeline. Ist dein Repo privat, braucht Argo CD Lesezugriff: in der Oberfläche unter *Settings → Repositories* mit einem Token, das nur lesen darf.
+Argo CD zeigt die Anwendung `dienste`: grün, wenn das Cluster dem Repo entspricht, gelb „OutOfSync“, sobald jemand etwas direkt im Cluster ändert. Argo CD gleicht selbst nichts ab; ausgerollt wird nur über die Pipeline. Die Abweichung wird in der Oberfläche angezeigt. Eine Benachrichtigung per E-Mail ist ein Zusatz: Argo CD Notifications mit einem eigenen Mailzugang (SMTP), den die Vorlage nicht mitbringt. Ist dein Repo privat, braucht Argo CD Lesezugriff: in der Oberfläche unter *Settings → Repositories* mit einem Token, das nur lesen darf.
 
 ## Lokal rendern ohne Azure
 
@@ -190,4 +206,4 @@ Die Steuerungsebene im kostenlosen Tarif kostet nichts. Bezahlt werden die zwei 
 
 Darf der Dienst kurz weg sein und gibt es nur eine Umgebung, reicht Compose — sonst ein schmales, verwaltetes Cluster.
 
-Du änderst die Datei im Repo, nicht die Maschine — das Cluster hält, was ausgerollt wurde, und jede Abweichung wird gemeldet.
+Du änderst die Datei im Repo, nicht die Maschine — das Cluster hält, was ausgerollt wurde, und Argo CD zeigt jede Abweichung an.

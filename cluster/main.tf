@@ -54,12 +54,13 @@ resource "azurerm_user_assigned_identity" "deploy" {
 }
 
 # Verbundanmeldung: nur Läufe auf dem Branch main dieses einen Repos.
+# Der Betreff muss genau dem entsprechen, den GitHub ausstellt.
 resource "azurerm_federated_identity_credential" "github_main" {
   name      = "github-main"
   parent_id = azurerm_user_assigned_identity.deploy.id
   audience  = ["api://AzureADTokenExchange"]
   issuer    = "https://token.actions.githubusercontent.com"
-  subject   = "repo:${var.github_repo}:ref:refs/heads/main"
+  subject   = "${var.github_oidc_sub_praefix}:ref:refs/heads/main"
 }
 
 # Die Pipeline darf genau dieses Cluster ansprechen, sonst nichts im Abo.
