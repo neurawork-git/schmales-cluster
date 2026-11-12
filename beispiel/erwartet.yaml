@@ -82,7 +82,9 @@ spec:
 
 ---
 # Source: dienste/templates/mcp.yaml
-# Der eigene Dienst, zustandslos: kein Volume, beliebig viele Kopien.
+# Der eigene Dienst: kein Volume, höchstens eine Kopie. Er darf Anmeldungen im
+# Speicher halten; bei einer zweiten Kopie landete jede Anfrage zufällig bei einer
+# von beiden. Ohne Anfragen null Kopien, mit Anfragen eine.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

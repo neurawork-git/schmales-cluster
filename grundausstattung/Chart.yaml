@@ -3,7 +3,8 @@ name: grundausstattung
 description: >-
   Was jedes Cluster einmal braucht, aus fremden Charts: Eingang (Traefik),
   Zertifikate (cert-manager), Oberfläche (Argo CD), Skalieren auf null
-  (KEDA mit HTTP-Zusatz). Eigene Templates gibt es hier nicht.
+  (HTTP-Zusatz für KEDA; KEDA selbst bringt AKS mit, siehe cluster/main.tf).
+  Eigene Templates gibt es hier nicht.
 type: application
 version: 0.1.0
 
@@ -17,9 +18,6 @@ dependencies:
   - name: argo-cd
     version: 10.18.0
     repository: https://argoproj.github.io/argo-helm
-  - name: keda
-    version: 2.21.0
-    repository: https://kedacore.github.io/charts
   - name: keda-add-ons-http
     version: 0.16.0
     repository: https://kedacore.github.io/charts

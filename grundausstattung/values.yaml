@@ -52,9 +52,9 @@ argo-cd:
     ingress:
       enabled: false
 
-# --- Skalieren auf null: KEDA mit HTTP-Zusatz ------------------------------
-keda: {}
-
+# --- Skalieren auf null: HTTP-Zusatz für KEDA ------------------------------
+# KEDA selbst bringt AKS mit (cluster/main.tf, workload_autoscaler_profile).
+# Der HTTP-Zusatz zählt die Anfragen und weckt einen Dienst, der auf null steht.
 keda-add-ons-http:
   scaler:
     replicas: 1

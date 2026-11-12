@@ -8,11 +8,8 @@ dependencies:
 - name: argo-cd
   repository: https://argoproj.github.io/argo-helm
   version: 10.18.0
-- name: keda
-  repository: https://kedacore.github.io/charts
-  version: 2.21.0
 - name: keda-add-ons-http
   repository: https://kedacore.github.io/charts
   version: 0.16.0
-digest: sha256:18d94bf6006db08fd387d8385ef03cb1d6a8ddb0a2e769b9b01fe9c3efff711b
-generated: "2026-11-12T15:12:40.2524339+01:00"
+digest: sha256:2f4709c1b28ea42af39d71d8ad44c0424ef08ec500e06d200836ad8c303cfe0c
+generated: "2026-11-12T15:33:57.949681+01:00"

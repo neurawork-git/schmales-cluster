@@ -10,8 +10,8 @@ Eine OpenTofu-Datei legt das Cluster an, zwei Helm-Charts beschreiben, was darau
 
 | Datei | Was darin steht |
 |---|---|
-| `cluster/main.tf` | das Cluster in Azure: Ressourcengruppe, AKS im kostenlosen Tarif mit zwei Rechnern, eine Identität, mit der sich die Pipeline ohne Passwort anmeldet |
-| `grundausstattung/` | was jedes Cluster einmal braucht, aus fremden Charts: Eingang (Traefik), Zertifikate (cert-manager), Oberfläche (Argo CD), Skalieren auf null (KEDA mit HTTP-Zusatz) |
+| `cluster/main.tf` | das Cluster in Azure: Ressourcengruppe, AKS im kostenlosen Tarif mit zwei Rechnern und KEDA als Zusatz von AKS, eine Identität, mit der sich die Pipeline ohne Passwort anmeldet |
+| `grundausstattung/` | was jedes Cluster einmal braucht, aus fremden Charts: Eingang (Traefik), Zertifikate (cert-manager), Oberfläche (Argo CD), Skalieren auf null (HTTP-Zusatz für KEDA) |
 | `dienste/` | deine Dienste: MCP-Dienst, Postgres, Open WebUI; **`dienste/values.yaml` ist die Datei, die du änderst** |
 | `.github/workflows/deploy.yml` | rollt bei jedem Push auf `main` erst die Grundausstattung, dann die Dienste aus und nennt am Ende die öffentliche IP |
 
@@ -181,13 +181,34 @@ Argo CD zeigt die Anwendung `dienste`: grün, wenn das Cluster dem Repo entspric
 
 ## Lokal rendern ohne Azure
 
-Was die Pipeline ausrollen würde, siehst du ohne Cluster und ohne Anmeldung:
+Was die Pipeline ausrollen würde, siehst du ohne Azure und ohne Anmeldung. Dafür reichen Git, Helm und kubectl, alle Befehle in PowerShell.
+
+**1. Vorlage holen.**
 
 ```powershell
-helm template probe ./dienste -f dienste/values.yaml
+git clone https://github.com/neurawork-git/schmales-cluster.git
+cd schmales-cluster
 ```
 
-Ändere einen Wert, etwa `eingang.basis`, und rendere erneut: Die Templates bleiben gleich, nur die Werte wandern an ihre Stellen.
+Ohne Git: auf der Seite des Repos *Code → Download ZIP*, dann `Expand-Archive schmales-cluster-main.zip .` und `cd schmales-cluster-main`.
+
+**2. Kubernetes in Docker Desktop einschalten.** In Docker Desktop *Einstellungen → Kubernetes → Enable Kubernetes*, dann *Apply*. Nach ein paar Minuten zeigt die Statusleiste „Kubernetes running“. Prüfen:
+
+```powershell
+kubectl --context docker-desktop get nodes
+```
+
+Fertig, wenn ein Rechner `docker-desktop` mit Status `Ready` erscheint. Das ist ein Cluster mit einem Rechner auf deinem Laptop.
+
+**3. Rendern und darin suchen.**
+
+```powershell
+helm template dienste ./dienste -f dienste/values.yaml > gerendert.yaml
+Select-String -Path gerendert.yaml -Pattern "^kind:"
+Select-String -Path gerendert.yaml -Pattern "containerPort|targetPort|port:"
+```
+
+Die erste Suche listet alle Objekte, die zweite die Kette der Ports. Ändere einen Wert, etwa `basis: "203.0.113.10.nip.io"` in `dienste/values.yaml`, rendere erneut und such nach `host:`: Jetzt stehen die drei Adressen darin. Die Templates bleiben gleich, nur die Werte wandern an ihre Stellen.
 
 ## Was es kostet
 
